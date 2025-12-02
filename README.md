@@ -43,6 +43,15 @@ To get started quickly - please refer :
   - [CUTLASS C++ Quick Start Guide](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/quickstart.html).
   - [CuTe DSL Quick Start Guide](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html).
 
+## examples
+
+```shell
+cd examples/00_self_gemm
+bash compile.sh
+./self_gemm.out 512 512 512 1 0
+bash search_config.sh
+```
+
 # What's New in CUTLASS 4.3
 
 ## CuTe DSL
