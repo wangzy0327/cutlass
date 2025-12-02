@@ -52,6 +52,10 @@ bash compile.sh
 bash search_config.sh
 ```
 
+gemm_performance_comparison.csv是Cutlass没启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比
+gemm_performance_comparison2.csv是Cutlass启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比，其中M,N,K不同（未测完全）
+gemm_performance_comparison3.csv是Cutlass启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比，其中M,N,K相同
+
 # What's New in CUTLASS 4.3
 
 ## CuTe DSL

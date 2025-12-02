@@ -108,15 +108,62 @@ cudaError_t CutlassSgemmNN(
 
   using CutlassType = std::conditional_t<std::is_same_v<T, half>, cutlass::half_t, T>;
 
-  using CutlassGemm = cutlass::gemm::device::Gemm<CutlassType,        // Data-type of A matrix
-                                                  ColumnMajor,  // Layout of A matrix
-                                                  CutlassType,        // Data-type of B matrix
-                                                  ColumnMajor,  // Layout of B matrix
-                                                  float,        // Data-type of C matrix
-                                                  ColumnMajor>; // Layout of C matrix
+  // using CutlassGemm = cutlass::gemm::device::Gemm<CutlassType,        // Data-type of A matrix
+  //                                                 ColumnMajor,        // Layout of A matrix
+  //                                                 CutlassType,        // Data-type of B matrix
+  //                                                 ColumnMajor,  // Layout of B matrix
+  //                                                 float,        // Data-type of C matrix
+  //                                                 ColumnMajor>; // Layout of C matrix
+
+  // This code section describes whether you want to use tensor cores or regular SIMT cores on GPU SM
+  using MMAOp = cutlass::arch::OpClassTensorOp;
+
+  // This code section describes CUDA SM architecture number
+  using SmArch = cutlass::arch::Sm70;
+
+  // This code section describes the tile size a thread block will compute
+  using ShapeMMAThreadBlock =
+      cutlass::gemm::GemmShape<128, 128, 32>;  // <- threadblock tile M = 128, N = 128, K = 32
+  // This code section describes tile size a warp will compute
+  using ShapeMMAWarp = cutlass::gemm::GemmShape<64, 64, 32>;  // <- warp tile M = 64, N = 64, K = 32 
+  // This code section describes the size of MMA op
+  using ShapeMMAOp = cutlass::gemm::GemmShape<8, 8, 4>;  // <- MMA Op tile M = 8, N = 8, K = 4
+
+  // This code section describes how threadblocks are scheduled on GPU
+  using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
+
+  // This code section describes ?
+  using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
+      float,                                     // <- data type of output matrix
+      128 / (sizeof(float)*8),  // <- this is the number of elements per
+                                                        // vectorized memory access. For half
+                                                        // precision, it's 8 elements. This becomes
+                                                        // the vector width of math instructions in
+                                                        // epilogue too
+      float,                                // <- data type of accumulator
+      float>;  // <- data type for alpha/beta in linear combination function <- data type of epilogue operations
+
+  // Number of pipelines you want to use
+  constexpr int NumStages = 2;
+
+  using CutlassGemmOpt = cutlass::gemm::device::Gemm<CutlassType,
+                                          ColumnMajor,
+                                          CutlassType,
+                                          ColumnMajor,
+                                          float,
+                                          ColumnMajor,
+                                          float,
+                                          MMAOp,
+                                          SmArch,
+                                          ShapeMMAThreadBlock,
+                                          ShapeMMAWarp,
+                                          ShapeMMAOp,
+                                          EpilogueOp,
+                                          SwizzleThreadBlock,
+                                          NumStages>;
 
   // Define a CUTLASS GEMM type
-  CutlassGemm gemm_operator;
+  CutlassGemmOpt gemm_operator;
 
   // Construct the CUTLASS GEMM arguments object.
   //
@@ -128,12 +175,33 @@ cudaError_t CutlassSgemmNN(
   // arguments to kernels and (2.) minimized initialization overhead on kernel entry.
   // 关键：用typename声明依赖类型Arguments
   // 对CutlassGemm::Arguments添加typename关键字，解决编译器无法识别依赖类型的问题
-  typename CutlassGemm::Arguments args({M , N, K},  // Gemm Problem dimensions
-                              {reinterpret_cast<CutlassType const*>(A), lda},    // Tensor-ref for source matrix A
-                              {reinterpret_cast<CutlassType const*>(B), ldb},    // Tensor-ref for source matrix B
-                              {C, ldc},    // Tensor-ref for source matrix C
-                              {C, ldc},    // Tensor-ref for destination matrix D (may be different memory than source C matrix)
-                              {alpha, beta}); // Scalars used in the Epilogue
+  // typename CutlassGemm::Arguments args({M , N, K},  // Gemm Problem dimensions
+  //                             {reinterpret_cast<CutlassType const*>(A), lda},    // Tensor-ref for source matrix A
+  //                             {reinterpret_cast<CutlassType const*>(B), ldb},    // Tensor-ref for source matrix B
+  //                             {C, ldc},    // Tensor-ref for source matrix C
+  //                             {C, ldc},    // Tensor-ref for destination matrix D (may be different memory than source C matrix)
+  //                             {alpha, beta}); // Scalars used in the Epilogue
+
+  // Create a tuple of problem size for matrix multiplication
+  // cutlass::gemm::GemmCoord problem_size(M, N, K);
+
+  // // Initialize tensors using CUTLASS helper functions
+  // cutlass::HostTensor<CutlassType, ColumnMajor> tensor_a(
+  //     problem_size.mk());  // <- Create matrix A with dimensions M x K
+  // cutlass::HostTensor<CutlassType, ColumnMajor> tensor_b(
+  //     problem_size.kn());  // <- Create matrix B with dimensions K x N
+  // cutlass::HostTensor<float, ColumnMajor> tensor_c(
+  //     problem_size.mn());  // <- Create matrix C with dimensions M x N
+  // cutlass::HostTensor<float, ColumnMajor> tensor_d(
+  //     problem_size.mn());  // <- Create matrix D with dimensions M x N used to store output from
+  //                          // CUTLASS kernel     
+
+  typename CutlassGemmOpt::Arguments args({M, N, K},  // Gemm Problem dimensions
+                            {reinterpret_cast<CutlassType const*>(A), lda},    // Tensor-ref for source matrix A
+                            {reinterpret_cast<CutlassType const*>(B), ldb},    // Tensor-ref for source matrix B
+                            {C, ldc},    // Tensor-ref for source matrix C
+                            {C, ldc},    // Tensor-ref for destination matrix D (may be different memory than source C matrix)
+                            {alpha, beta}); // Scalars used in the Epilogue                         
 
   //
   // Launch the CUTLASS GEMM kernel.
