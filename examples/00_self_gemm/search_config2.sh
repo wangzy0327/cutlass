@@ -10,7 +10,7 @@ alpha=1
 beta=0
 
 # 输出结果文件
-result_file="gemm_performance_comparison3.csv"
+result_file="gemm_performance_comparison4.csv"
 
 # 写入CSV表头
 echo "m,n,k,cutlass_time_ms,cutlass_gflops,cublas_time_ms,cublas_gflops" > $result_file
@@ -26,7 +26,7 @@ for size in $(seq $start $step $end); do
     echo "========================================"
     
     # 执行测试程序，捕获输出
-    output=$(./self_gemm_template6.out $m $n $k $alpha $beta 2>&1)
+    output=$(./self_gemm_template.out $m $n $k $alpha $beta 2>&1)
     
     # 提取Cutlass时间和GFLOPS
     cutlass_time=$(echo "$output" | grep "Cutlass GEMM time:" | awk '{print $4}')
