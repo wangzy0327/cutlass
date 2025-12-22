@@ -43,18 +43,194 @@ To get started quickly - please refer :
   - [CUTLASS C++ Quick Start Guide](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/quickstart.html).
   - [CuTe DSL Quick Start Guide](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/quick_start.html).
 
-## examples
+#### examples
+
+实现代码为[self_gemm_template.cu](examples/00_self_gemm/self_gemm_template.cu)
 
 ```shell
 cd examples/00_self_gemm
 bash compile.sh
-./self_gemm.out 512 512 512 1 0
+nvcc -std=c++17 -I$HOME/cuda-code/cutlass/include -I$HOME/cuda-code/cutlass/examples/common -I$HOME/cuda-code/cutlass/tools/util/include  -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_80,code=sm_80 self_gemm_template.cu -o self_gemm_template.out -lcublas -lcudart
+./self_gemm_template.out 512 512 512 1 0
 bash search_config.sh
 ```
 
-gemm_performance_comparison.csv是Cutlass没启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比
-gemm_performance_comparison2.csv是Cutlass启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比，其中M,N,K不同（未测完全）
-gemm_performance_comparison3.csv是Cutlass启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比，其中M,N,K相同
+cuda-12.0 测试half类型gemm结果说明如下：
+
+[gemm_performance_comparison_V100.csv](examples/00_self_gemm/gemm_performance_comparison_V100.csv)是在V100架构下Cutlass没启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比。[gemm_performance_comparison_A100.csv](examples/00_self_gemm/gemm_performance_comparison_A100.csv)是在A100架构下结果。
+
+[gemm_performance_comparison2_V100.csv](examples/00_self_gemm/gemm_performance_comparison2_V100.csv)是在V100架构下Cutlass启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比，其中M,N,K不同。
+
+[gemm_performance_comparison3_V100.csv](examples/00_self_gemm/gemm_performance_comparison3_V100.csv)是在V100架构下Cutlass启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比，其中M,N,K相同。[gemm_performance_comparison_A100.csv](examples/00_self_gemm/gemm_performance_comparison3_A100.csv)是在A100架构下结果。
+
+[gemm_performance_comparison4_V100.csv](examples/00_self_gemm/gemm_performance_comparison4_V100.csv)是在V100架构扩展到更大规模Gemm形状下Cutlass启动TensorCore和硬件架构适配等配置，与cuBLAS执行对比，其中M,N,K相同。[gemm_performance_comparison4_A100.csv](examples/00_self_gemm/gemm_performance_comparison4_A100.csv) 是在A100架构下结果。
+
+
+
+#### metrics analysis
+
+下面列出具体的V100和A100官方的GPUs比较
+
+| GPU Features                                  | Nvidia Tesla V100        | Nvidia Tesla A100         |
+| --------------------------------------------- | ------------------------ | ------------------------- |
+| GPU Artchitecture                             | Nvidia Volta             | Nvidia Ampere             |
+| SMs                                           | 80                       | 108                       |
+| FP32 Cores / SM                               | 64                       | 64                        |
+| FP32 Cores / GPU                              | 5120                     | 6912                      |
+| FP64 Cores / SM (excl. Tensor)                | 32                       | 32                        |
+| FP64 Cores / GPU (excl. Tensor)               | 2560                     | 3456                      |
+| INT32 Cores / SM                              | 64                       | 64                        |
+| INT32 Cores / GPU                             | 5120                     | 6912                      |
+| Tensor Cores / SM                             | 8                        | 4                         |
+| Tensor Cores / GPU                            | 640                      | 432                       |
+| Peak FP16 Tensor TFLOPS with FP16 Accumulate  | 125                      | 312/624³                  |
+| Peak FP16 Tensor TFLOPS with FP32 Accumulate¹ | 125                      | 312/624³                  |
+| Peak BF16 Tensor TFLOPS with FP32 Accumulate¹ | NA                       | 312/624³                  |
+| Peak TF32 Tensor TFLOPS                       | NA                       | 156/312³                  |
+| Peak FP64 Tensor TFLOPS                       | NA                       | 19.5                      |
+| Peak INT8 Tensor TOPS¹                        | NA                       | 624/1248³                 |
+| Peak INT4 Tensor TOPS¹                        | NA                       | 1248/2496³                |
+| Peak FP16 TFLOPS¹(non-Tensor)                 | 31.4                     | 78                        |
+| Peak BF16 TFLOPS¹(non-Tensor)                 | NA                       | 39                        |
+| Peak FP32 TFLOPS¹(non-Tensor)                 | 15.7                     | 19.5                      |
+| Peak FP64 TFLOPS¹ (non-Tensor)                | 7.8                      | 9.7                       |
+| Peak INT32 TOPS¹,⁴                            | 15.7                     | 19.5                      |
+| Memory Size                                   | 32 GB/16 GB              | 40 GB                     |
+| Memory  Bandwidth                             | 900 GB/sec               | 1555 GB/sec               |
+| L2 Cache Size                                 | 6144 KB                  | 40960 KB                  |
+| Shared Memory Size / SM                       | Configurable up to 96 KB | Configurable up to 164 KB |
+
+
+
+1. *Peak rates are based on GPU Boost Clock.*
+2. *Four Tensor Cores in an A100 SM have 2x the raw FMA computational*
+*power of eight Tensor Cores in a GV100 SM.*
+3. *Effective TOPS / TFLOPS using the new Sparsity Feature*
+4. *TOPS = IMAD-based integer math*
+
+
+
+根据通过ncu分析self_gemm_template.out不同数据规模下gemm的roofline模型，这里仅分析了V100型号的GPU
+
+```shell
+ncu --set roofline -o self_gemm_template_6144 ./self_gemm_template.out 6144 6144 6144
+ncu --set roofline -o self_gemm_template_20480 ./self_gemm_template.out 20480 20480 20480
+```
+
+ncu收集指标性能日志正常输出类似如下：
+
+```shell
+==PROF== Connected to process 13681 (/home/wzy/cuda-code/cutlass/examples/00_self_gemm/self_gemm_template.out)
+Detected GPU: Tesla V100-PCIE-32GB (SM 7.0)
+==PROF== Profiling "InitializeMatrix_kernel" - 0: 0%....50%....100% - 21 passes
+==PROF== Profiling "InitializeMatrix_kernel" - 1: 0%....50%....100% - 21 passes
+==PROF== Profiling "InitializeMatrix_kernel" - 2: 0%....50%....100% - 21 passes
+==PROF== Profiling "InitializeMatrix_kernel" - 3: 0%....50%....100% - 21 passes
+Running warm-up...
+==PROF== Profiling "Kernel" - 4: 0%....50%....100% - 21 passes
+==PROF== Profiling "Kernel" - 5: 0%....50%....100% - 21 passes
+==PROF== Profiling "Kernel" - 6: 0%....50%....100% - 21 passes
+==PROF== Profiling "Kernel" - 7: 0%....50%....100% - 21 passes
+==PROF== Profiling "Kernel" - 8: 0%....50%....100% - 21 passes
+==PROF== Profiling "Kernel" - 9: 0%....50%....100% - 21 passes
+Cutlass GEMM time: 252.407 ms
+Cutlass GEMM Performance: 1837.73 GFLOPS
+==PROF== Profiling "Kernel" - 10: 0%....50%....100% - 21 passes
+Cublas GEMM time: 312.815 ms
+Cublas GEMM Performance: 1482.85 GFLOPS
+All results match within tolerance (abs=0.001, rel=0.01)
+Passed.
+==PROF== Disconnected from process 13681
+==PROF== Report: /home/wzy/cuda-code/cutlass/examples/00_self_gemm/self_gemm_template_6144.ncu-rep
+```
+
+补充：用下面命令得到的性能指标结果不包含roofline 和 Tensor Core性能指标
+
+前期在这里踩过坑，特此记录。
+
+```shell
+ncu --set full  --target-processes all  -f -o self_gemm_template_6144   ./self_gemm_template.out 6144 6144 6144
+```
+
+cutlass跟cublas相关内容补充：
+
+- cuda10.x及之前：cuBLAS使用私有，高度优化的汇编内核
+
+- cuda11.2及以下，Nvidia开源Cutlass，并在cuBLAS中开始集成CUTLASS作为部分GEMM操作的实现后端
+- cuda11.3+，更广泛使用Cutlass，特别对于Ampere架构（A100）的新数据类型（TP32、BF16）
+- cuda 12.0+，Cutlass成为cuBLAS GEMM的主要实现方式之一
+
+这里举例在cuda11.2版本中，传统接口cublasSgemm在使用ncu进行性能指标分析时，其Function name为volta_sgemm_128x128_nn；在cuda-12.0版本中，接口cublasSgemmEx在使用ncu进行性能分析时，可以发现其Function name（cutlass::Kernel<cutlass_70_tensorop_s884gemm_f16_128x128_nn_align8>(Params)）是以cutlass为前缀的。
+
+通过nsys分析self_gemm_template.out汇总命令以及得到信息如下：
+
+```shell
+nsys profile --stats=true --force-overwrite=true --trace=cublas,cuda,osrt,cudnn,nvtx -o self_gemm_template_sys ./self_gemm_template.out 6144 6144 6144
+```
+
+nsys日志输出信息如下，从下面输出信息中可以得出调用cutlass的Function name为cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::…，而cutblas调用cublasSgemmEx的Function name 为cutlass::Kernel<cutlass_70_tensorop_s884gemm_f16_128x128_nn_align8>(T1::Params)
+
+```shell
+Generating '/tmp/nsys-report-0baa.qdstrm'
+[1/8] [========================100%] self_gemm_template_sys.nsys-rep
+[2/8] [========================100%] self_gemm_template_sys.sqlite
+[3/8] Executing 'nvtxsum' stats report
+
+ Time (%)  Total Time (ns)  Instances    Avg (ns)       Med (ns)      Min (ns)     Max (ns)    StdDev (ns)   Style           Range         
+ --------  ---------------  ---------  -------------  -------------  -----------  -----------  -----------  -------  ----------------------
+    100.0      984,017,571          1  984,017,571.0  984,017,571.0  984,017,571  984,017,571          0.0  PushPop  cuBLAS:cublasCreate_v2
+
+[4/8] Executing 'osrtsum' stats report
+[5/8] Executing 'cudaapisum' stats report
+
+ Time (%)  Total Time (ns)  Num Calls    Avg (ns)      Med (ns)    Min (ns)    Max (ns)    StdDev (ns)                 Name               
+ --------  ---------------  ---------  ------------  ------------  ---------  -----------  ------------  ---------------------------------
+     78.6      959,444,284        951   1,008,879.4      17,975.0      5,768   35,650,488   3,308,748.5  cuLibraryLoadData                
+     12.1      148,004,376          7  21,143,482.3     224,700.0      5,629  146,994,684  55,495,237.7  cudaMalloc                       
+      3.6       44,414,513          3  14,804,837.7  21,998,749.0     23,309   22,392,455  12,802,692.8  cudaMemcpy                       
+      2.9       35,052,148          6   5,842,024.7       2,529.5      1,589   35,031,926  14,300,073.2  cudaDeviceSynchronize            
+      1.9       22,798,005          9   2,533,111.7     215,196.0     12,456   14,321,387   4,964,712.3  cudaFree                         
+      0.9       10,930,418          2   5,465,209.0   5,465,209.0  5,215,536    5,714,882     353,090.9  cudaEventSynchronize             
+      0.0          211,148        766         275.7         211.0        142       16,390         594.7  cuGetProcAddress_v2              
+      0.0          133,275          1     133,275.0     133,275.0    133,275      133,275           0.0  cudaGetDeviceProperties_v2_v12000
+      0.0          108,117         11       9,828.8       6,417.0      5,467       36,293       9,031.1  cudaLaunchKernel                 
+      0.0           66,743          4      16,685.8       9,886.5      8,525       38,445      14,534.9  cudaMemset                       
+      0.0           27,524          4       6,881.0       5,346.0      3,282       13,550       4,555.5  cudaEventRecord                  
+      0.0           20,541         18       1,141.2         462.5        439        5,379       1,520.2  cudaEventCreateWithFlags         
+      0.0           14,944          4       3,736.0       3,312.5        738        7,581       3,380.2  cudaEventCreate                  
+      0.0            9,017         18         500.9         422.0        343        1,364         236.7  cudaEventDestroy                 
+      0.0            6,688          2       3,344.0       3,344.0      3,084        3,604         367.7  cuInit                           
+      0.0              996          3         332.0         164.0        160          672         294.5  cuModuleGetLoadingMode           
+
+[6/8] Executing 'gpukernsum' stats report
+
+ Time (%)  Total Time (ns)  Instances   Avg (ns)     Med (ns)    Min (ns)    Max (ns)   StdDev (ns)     GridXYZ         BlockXYZ                                                     Name                                                
+ --------  ---------------  ---------  -----------  -----------  ---------  ----------  -----------  --------------  --------------  ----------------------------------------------------------------------------------------------------
+     86.3       39,511,045          6  6,585,174.2  5,724,363.5  5,712,283  10,908,541  2,118,017.7    48   48    1   128    1    1  void cutlass::Kernel<cutlass::gemm::kernel::Gemm<cutlass::gemm::threadblock::MmaPipelined<cutlass::…
+     11.4        5,221,218          1  5,221,218.0  5,221,218.0  5,221,218   5,221,218          0.0   384    6    1   128    1    1  void cutlass::Kernel<cutlass_70_tensorop_s884gemm_f16_128x128_nn_align8>(T1::Params)                
+      1.1          522,266          2    261,133.0    261,133.0    260,701     261,565        610.9   384  384    1    16   16    1  void InitializeMatrix_kernel<float, (bool)1>(T1 *, int, int, int)                                   
+      1.1          521,753          2    260,876.5    260,876.5    260,797     260,956        112.4   384  384    1    16   16    1  void InitializeMatrix_kernel<__half, (bool)1>(T1 *, int, int, int)                                  
+
+[7/8] Executing 'gpumemtimesum' stats report
+
+ Time (%)  Total Time (ns)  Count    Avg (ns)      Med (ns)     Min (ns)    Max (ns)   StdDev (ns)      Operation     
+ --------  ---------------  -----  ------------  ------------  ----------  ----------  -----------  ------------------
+     97.7       43,497,815      2  21,748,907.5  21,748,907.5  21,344,896  22,152,919    571,358.5  [CUDA memcpy DtoH]
+      1.3          590,073      4     147,518.3     148,238.5      97,983     195,613     55,041.1  [CUDA memset]     
+      0.9          418,587      1     418,587.0     418,587.0     418,587     418,587          0.0  [CUDA memcpy DtoD]
+
+[8/8] Executing 'gpumemsizesum' stats report
+
+ Total (MB)  Count  Avg (MB)  Med (MB)  Min (MB)  Max (MB)  StdDev (MB)      Operation     
+ ----------  -----  --------  --------  --------  --------  -----------  ------------------
+    452.985      4   113.246   113.246    75.497   150.995       43.588  [CUDA memset]     
+    301.990      2   150.995   150.995   150.995   150.995        0.000  [CUDA memcpy DtoH]
+    150.995      1   150.995   150.995   150.995   150.995        0.000  [CUDA memcpy DtoD]
+
+Generated:
+    /home/wzy/cuda-code/cutlass/examples/00_self_gemm/self_gemm_template_sys.nsys-rep
+    /home/wzy/cuda-code/cutlass/examples/00_self_gemm/self_gemm_template_sys.sqlite
+```
 
 # What's New in CUTLASS 4.3
 

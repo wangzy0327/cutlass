@@ -675,6 +675,10 @@ cudaError_t TestCutlassGemm(int M, int N, int K, float alpha, float beta, int sm
   // 创建cuBLAS句柄
   cublasHandle_t handle;
   cublasStatus_t cublas_status = cublasCreate_v2(&handle);
+  // 必须设置 math mode to allow Tensor Core
+  cublasSetMathMode(handle, CUBLAS_TENSOR_OP_MATH); // or CUBLAS_DEFAULT_MATH
+  //显示绑定到主stream
+  cublasSetStream_v2(handle,0);
   if (cublas_status != CUBLAS_STATUS_SUCCESS) {
     std::cerr << "cuBLAS handle creation failed: " << cublas_status << std::endl;
     return cudaErrorUnknown;
@@ -689,6 +693,7 @@ cudaError_t TestCutlassGemm(int M, int N, int K, float alpha, float beta, int sm
 
   cudaEventRecord(stop_blas);
   cudaEventSynchronize(stop_blas);
+  cudaDeviceSynchronize();
   float elapsed_ms_blas;
   cudaEventElapsedTime(&elapsed_ms_blas, start_blas, stop_blas);
   std::cout << "Cublas GEMM time: " << elapsed_ms_blas << " ms" << std::endl;

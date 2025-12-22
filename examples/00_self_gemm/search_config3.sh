@@ -10,7 +10,7 @@ alpha=1
 beta=0
 
 # 输出结果文件
-result_file="gemm_performance_comparison2.csv"
+result_file="gemm_performance_comparison3.csv"
 
 # 写入CSV表头
 echo "m,n,k,cutlass_time_ms,cutlass_gflops,cublas_time_ms,cublas_gflops" > $result_file
