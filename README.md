@@ -232,6 +232,53 @@ Generated:
     /home/wzy/cuda-code/cutlass/examples/00_self_gemm/self_gemm_template_sys.sqlite
 ```
 
+经过分析测试self_gemm_template在不同规模下执行性能。具体的对比如下：
+
+Nvidia V100 roofline 实测Float Tensor Core峰值约101TFlops （约为理论125T的80%），带宽约为727.8G/s（约为理论900G的80%），实测的DRAM Arithmetic Intensity[Flop/byte]约为112.5，实测的L2 Arithmetic Intensity[Flop/byte]约为42.5，实测的L2 Arithmetic Intensity[Flop/byte]约为2
+
+带宽实测代码/usr/local/cuda/extras/demo_suite/bandwidthTest
+
+![V100_bandwidth](imgs/bandwidth_V100.png)
+
+下面是两个列表（6144规模和20480规模）
+
+| metrics(MNK=6144)                    | Cutlass    | cuBLAS     |
+| ------------------------------------ | ---------- | ---------- |
+| DRAM Achieved value                  | 83.5TFlops | 88.8TFlops |
+| L1 Achieved value                    | 83.5TFlops | 88.8TFlops |
+| DRAM Arithmetic Intensity[Flop/byte] | 334.4      | 541.2      |
+| L1 Arithmetic Intensity[Flop/byte]   | 63.8       | 63.8       |
+
+
+
+| metrics(MNK=20480)                   | Cutlass    | cuBLAS     |
+| ------------------------------------ | ---------- | ---------- |
+| DRAM Achieved value                  | 94.7TFlops | 94.7TFlops |
+| L1 Achieved value                    | 36.6TFops  | 36.6Tflops |
+| DRAM Arithmetic Intensity[Flop/byte] | 84.5       | 682.6      |
+| L1 Arithmetic Intensity[Flop/byte]   | 64.9       | 65.4       |
+
+
+
+具体的测试指标roofline展示如下：
+
+Cutlass(MNK=6144)
+
+![Cutlass(MNK=6144)](imgs/gemm_6144_Cutlass_roofline.png)
+
+cuBLAS(MNK=6144)
+
+![cuBLAS(MNK=6144)](imgs/gemm_6144_cuBLAS_roofline.png)
+
+Cutlass(MNK=20480)
+
+![Cutlass(MNK=20480)](imgs/gemm_20480_Cutlass_roofline.png)
+
+cuBLAS(MNK=20480)
+
+![cuBLAS(MNK=20480)](imgs/gemm_20480_cuBLAS_roofline.png)
+
+
 # What's New in CUTLASS 4.3
 
 ## CuTe DSL
