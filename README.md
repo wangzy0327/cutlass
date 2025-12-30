@@ -146,6 +146,20 @@ Passed.
 
 补充：用下面命令得到的性能指标结果不包含roofline 和 Tensor Core性能指标
 
+这里可以通过命令来查看ncu支持的sections，可以发现full 中并不包含有关Tensor相关的Roofline
+
+```shell
+ncu --list-sets
+```
+
+![ncu-list-sets](imgs/ncu-list-sections.png)
+
+目前这里的roofline经过测试仅能在V100下正常使用，A100在cuda-12.0版本下不支持，具体请看[Why is the Compute Throughput’s value different from the actual Performance / Peak Performance](https://forums.developer.nvidia.com/t/why-the-compute-throughputs-value-is-different-from-the-actual-performance-peak-performance/227563)。如果想在roofline基础上补充增加部分有关MemoryWorkload 等section的指标可通过如下命令自由增添。 命令举例：
+
+```shell
+ncu --set roofline --section ComputeWorkloadAnalysis --section MemoryWorkloadAnalysis --section  MemoryWorkloadAnalysis_Chart --section Occupancy --section SchedulerStats  -o self_gemm_template_10240 ./self_gemm_template.out 10240 10240 12040
+```
+
 前期在这里踩过坑，特此记录。
 
 ```shell
